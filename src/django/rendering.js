@@ -89,7 +89,7 @@ class Renderer {
   }
 
   project_renderers() {
-      return keys(this._project_renderers)
+    return keys(this._project_renderers)
   }
 
   test_renderers() {
@@ -106,6 +106,138 @@ class Renderer {
 
   channels_app_renderers() {
     return keys(this._channels_app_renderers)
+  }
+
+  project_tree(projectid) {
+    const project = store.getters.projectData(projectid)
+
+    let project_children = this.project_renderers().map(render_name => {
+      return {
+        path: project.name + '/' + render_name,
+        name: render_name,
+        render: () => this.project_render(render_name, projectid)
+      }
+    })
+
+    if (project.channels) {
+      project_children.push(...this.channels_renderers().map(render_name => {
+        return {
+          path: project.name + '/' + render_name,
+          name: render_name,
+          render: () => this.channels_render(render_name, projectid)
+        }
+      }))
+    }
+
+    const project_item = {
+      path: project.name,
+      name: project.name,
+      folder: true,
+      children: project_children
+    }
+
+    const apps = keys(store.getters.projectData(projectid).apps).filter(
+      app_id => store.getters.appData(app_id) !== undefined
+    ).map(app_id =>{
+      const app = store.getters.appData(app_id)
+
+      if (app == undefined) return
+
+      const models = this.get_models(app_id)
+
+      let model_templates = []
+
+      models.forEach((model) => {
+        model_templates.push(...this.template_renderers().map(render_name => {
+          const fileName = model.name.toLowerCase()  + '_' + render_name;
+          return {
+            path: app.name  + "/templates/" + app.name + '/' + fileName,
+            name: fileName,
+            render: () => this.template_render(render_name, app_id, model.id)
+          }
+        }))
+      })
+
+      let model_children = this.app_renderers().map(render_name => {
+        return {
+          path: app.name + '/' + render_name,
+          name: render_name,
+          render: () => this.app_render(render_name, app_id)
+        }
+      })
+
+      if (project.channels) {
+        model_children.push(...this.channels_app_renderers().map(render_name => {
+          return {
+            path: app.name + '/' + render_name,
+            name: render_name,
+            render: () => this.channels_app_render(render_name, app_id)
+          }
+        }))
+      }
+
+      model_children = model_children.concat(
+        {
+          path: app.name + "/templates/" + app.name,
+          name: "templates/" + app.name,
+          folder: true,
+          children: model_templates
+        }
+      )
+
+      return {
+        path: app.name,
+        name: app.name,
+        folder: true,
+        children: model_children
+      }
+    })
+
+    const root_items = this.root_renderers().map(render_name => {
+      return {
+        path: render_name,
+        name: render_name,
+        render: () => this.root_render(render_name, projectid)
+      }
+    })
+
+    const template_items = [
+      {
+        path: "templates",
+        name: "templates",
+        folder: true,
+        children: this.root_template_renderers().map(render_name => {
+          return {
+            path: 'templates/' + render_name,
+            name: render_name,
+            render: () => this.root_template_render(render_name, projectid)
+          }
+        })
+      }
+    ]
+
+    return [project_item].concat(apps).concat(template_items).concat(root_items)
+  }
+
+  project_flat(projectid, folders=false) {
+    function flattenTree(arr, d = 1) {
+      /* Flatten a tree structure to a flat list */
+      return d > 0 ?
+        arr.reduce(
+          (acc, val) => acc.concat(
+            Array.isArray(val.children) ?
+              flattenTree(val.children, d - 1).concat([val]) : val
+            ),
+          []
+        ):
+        arr.slice();
+    }
+
+    const listing = flattenTree(this.project_tree(projectid))
+    // Return folders if requested
+    return listing.filter((item) => {
+      return folders === true ? true : !item.folder
+    })
   }
 
   app_render(render_name, appid) {
@@ -174,7 +306,7 @@ class Renderer {
 
   get_apps(projectid) {
     const project = store.getters.projectData(projectid)
-    return keys(project.apps).map((app) => {
+    return keys(project.apps).filter(app => store.getters.appData(app)).map((app) => {
       return Object.assign(store.getters.appData(app), {id: app})
     })
   }
@@ -185,7 +317,7 @@ class Renderer {
 
   get_fields(model) {
     return keys(model.fields).map((field) => {
-      return store.getters.fields()[field].data()
+      return store.getters.fields()[field] ? store.getters.fields()[field].data() : [];
     })
   }
 
@@ -231,6 +363,16 @@ class Renderer {
   requirements (projectid) {
     const project = store.getters.projectData(projectid)
     let requirements = requirements_txt
+    const DJANGO_3 = 'Django>=3,<4';
+    const DJANGO_2 = 'Django>=2,<3';
+    if (project.django_version === 3) {
+      requirements = requirements.replace('XXX_DJANGO_VERSION_XXX', DJANGO_3)
+    } else if (project.django_version == 2) {
+      requirements = requirements.replace('XXX_DJANGO_VERSION_XXX', DJANGO_2)
+    } else {
+      console.error('Unknown Django version ' + project.django_version + ', defaulting to ' + DJANGO_3)
+      requirements = requirements.replace('XXX_DJANGO_VERSION_XXX', DJANGO_3)
+    }
     if (project.channels === true) {
       requirements += 'channels\n'
       requirements += 'channels_redis\n'
@@ -373,18 +515,31 @@ CHANNEL_LAYERS = {
     </a>
 </p>
     `
-    detail_html += `\n<form method="post">`
-    detail_html += `\n{% csrf_token %}`
+    detail_html += `\n<form method="post" enctype="multipart/form-data">`
+    detail_html += `\n  {% csrf_token %}`
+    detail_html += `\n  {{form.errors}}`
 
     this.get_fields(modelData).forEach((field) => {
 
       var html_field_type = "text"
       switch (field.type) {
         case 'django.db.models.DateTimeField':
+          html_field_type = "datetime-local"
+          break
+        case 'django.db.models.DateField':
           html_field_type = "date"
+          break
+        case 'django.db.models.TimeField':
+          html_field_type = "time"
           break
         case 'django.db.models.IntegerField':
           html_field_type = "number"
+          break
+        case 'django.db.models.FileField':
+          html_field_type = "file"
+          break
+        case 'django.db.models.ImageField':
+          html_field_type = "file"
           break
       }
 
@@ -655,8 +810,13 @@ CHANNEL_LAYERS = {
       if (model.fields && keys(model.fields).length > 0) {
         models_py += '    # Fields\n'
         for( var field in model.fields ) {
-          const fData = store.getters.fields()[field].data()
-          models_py += '    ' + fData.name + ' = models.' + fData.type.split('.').pop() + '(' + fData.args + ')\n'
+          const f = store.getters.fields()[field]
+          if (f) {
+            const fData = f.data()
+            models_py += '    ' + fData.name + ' = models.' + fData.type.split('.').pop() + '(' + fData.args + ')\n'
+          } else {
+            models_py += '    ' + 'UNKNOWN' + ' = models.' + 'UNKNOWN' + '(' + 'UNKNOWN'+ ')\n'
+          }
         }
         models_py += '\n'
       }
@@ -1016,7 +1176,7 @@ CHANNEL_LAYERS = {
           keys(appData.models).map((modelid) => {
             const modelData = store.getters.modelData(modelid)
             const content = this.template_render(renderer, app, modelid)
-            const path = project.name + '/' + appData.name + '/templates/' + appData.name + '/' + modelData.name + '_' + renderer
+            const path = project.name + '/' + appData.name + '/templates/' + appData.name + '/' + modelData.name.toLowerCase() + '_' + renderer
             tarball.append(path, content)
           })
         })

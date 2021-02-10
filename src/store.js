@@ -11,16 +11,17 @@ export default new Vuex.Store({
   state: {
     user: undefined,
     loaded: false,
+    error: false,
     projects: {},
     apps: {},
     models: {},
     fields: {},
     relationships: {},
-    imported_models: []
   },
   getters: {
     user: (state) => () => state.user,
     loaded: (state) => () => state.loaded,
+    error: (state) => () => state.error,
     projects: (state) => () => state.projects,
     projectsData: (state) => () => {
       return Object.keys(state.projects).map((pid) => {
@@ -29,21 +30,24 @@ export default new Vuex.Store({
     },
     projectData: (state) => (id) => state.projects[id].data(),
     apps: (state) => () => state.apps,
-    appData: (state) => (id) => state.apps[id].data(),
+    appData: (state) => (id) => state.apps[id] ? state.apps[id].data() : undefined,
     models: (state) => () => state.models,
-    modelData: (state) => (id) => state.models[id].data(),
+    modelData: (state) => (id) => state.models[id] ? state.models[id].data() : undefined,
     fields: (state) => () => state.fields,
     relationships: (state) => () => state.relationships,
     ordered_models: (state) => (appid) => {
-      const appData = state.apps[appid].data()
+      const appData = state.apps[appid] ? state.apps[appid].data() : undefined;
+      if (appData === undefined) { return [] }
       const unordered_models = Object.keys(appData.models).map((model) => {
-        return Object.assign(state.models[model].data(), {id: model})
+        if (state.models[model]) {
+          return Object.assign(state.models[model].data(), {id: model})
+        }
       })
-      const models_no_parents = unordered_models.filter((model) => {
+      const models_no_parents = unordered_models.filter(model => model !== undefined).filter((model) => {
         return model.parents.length === 0
       })
 
-      const models_with_parents = unordered_models.filter((model) => {
+      const models_with_parents = unordered_models.filter(model => model !== undefined).filter((model) => {
         return model.parents.length !== 0
       })
 
@@ -58,11 +62,13 @@ export default new Vuex.Store({
 
       return models_no_parents.concat(models_with_parents_sorted)
     },
-    imported_models: (state) => () => state.imported_models,
   },
   mutations: {
     set_state (state, payload) {
       Vue.set(state, payload.key, payload.values)
+    },
+    set_error (state, error) {
+      state.error = error
     },
     set_user (state, user) {
       console.log('Loaded', !user.isAnonymous ? user.display_name : 'Anonymous User ' + user.uid)
@@ -100,35 +106,17 @@ export default new Vuex.Store({
       state.fields = {}
       state.relationships = {}
     },
-    add_imported_models (state, imported_models) {
-      event({
-        eventCategory: 'model',
-        eventAction: 'import-models',
-        eventLabel: 'ImportModels',
-        eventValue: 1
-      })
-      state.imported_models = state.imported_models.concat(imported_models)
-    },
-    remove_imported_model (state, index) {
-      event({
-        eventCategory: 'model',
-        eventAction: 'remove-imported-model',
-        eventLabel: state.imported_models[index].name,
-        eventValue: 1
-      })
-      Vue.delete(state.imported_models, index)
-    },
   },
   actions: {
     load : function ({commit}, userid) {
       var firestore = firebase.firestore()
 
-      const snapShotErrorHandler = function (err) {
+      const snapShotErrorHandler = function (error) {
         if (firebase.auth().currentUser) {
-          console.log('OnSnapshot error', firebase.auth().currentUser)
-          throw err
+          commit('set_error', error)
+          throw error
         } else {
-          // This is OK user is no longer logged in'
+          // This is OK user as no longer logged in
         }
       }
 
@@ -192,6 +180,8 @@ export default new Vuex.Store({
         owner: firebase.auth().currentUser.uid,
         name: payload.name,
         description: payload.description,
+        channels: payload.channels,
+        django_version: payload.django_version,
         apps: {}
       })
     },
@@ -211,6 +201,57 @@ export default new Vuex.Store({
           {[`apps.${app.id}`]: true}
         )
       })
+    },
+    addModels: function (_, payload) {
+      event({
+        eventCategory: 'model',
+        eventAction: 'add-models',
+        eventLabel: 'multiple-models',
+        eventValue: payload.length
+      })
+      const userid = firebase.auth().currentUser.uid
+
+      const db = firebase.firestore()
+      // Get a new write batch
+      var batch = db.batch();
+      payload.forEach(model => {
+
+        const fields = {};
+        const relationships = {}
+
+        model.fields.forEach(field => {
+          const newFieldRef= db.collection('fields').doc();
+          batch.set(newFieldRef, {
+            owner: userid,
+            name: field.name,
+            type: field.type,
+            args: field.args || ''
+          })
+          fields[newFieldRef.id] = true;
+        })
+
+        const modelData = {
+          owner: userid,
+          name: model.name,
+          parents: model.parents || [],
+          abstract: Boolean(model.abstract),
+          fields,
+          relationships,
+        }
+        var newModelRef = db.collection('models').doc();
+
+        // Add it in the batch
+        batch.set(newModelRef, modelData);
+
+        var appRef = db.collection("apps").doc(model.app);
+        const appData = {[`models.${newModelRef.id}`]: true}
+        batch.update(appRef, appData);
+
+      })
+      // Commit the batch
+      return batch.commit().then(function () {
+        console.debug('Added batch of ', payload.length, 'models')
+      });
     },
     addModel: function ({dispatch}, payload) {
       event({

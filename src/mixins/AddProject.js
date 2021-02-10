@@ -1,4 +1,4 @@
-import {schemas} from '@/schemas/'
+import {schemas} from '@/schemas'
 import {showFormDialog} from '@/dialogs/'
 import {showMessageDialog} from '@/dialogs/'
 import firebase from 'firebase/app'
@@ -17,18 +17,19 @@ var addProjectMixin = {
             "Could not create project.",
             "Sorry the maximum number of projects is currently " + MAX_PROJECTS,
             () => {},
-            "error"
           )
           return Promise.reject(new Error("Too many projects"))
         } else {
           showFormDialog(
             'Add new project',
             (formdata) => {
-              console.log('Add project', formdata.name, formdata.description)
+              console.log('Add project', formdata)
               this.$store.dispatch(
                 'addProject', {
                   name: formdata.name,
-                  description: formdata.description || ""
+                  description: formdata.description || "",
+                  channels: formdata.channels || false,
+                  django_version: formdata.django_version,
                 }
               ).then((newProject) => {
                 console.log('NewProject', newProject)
@@ -37,7 +38,7 @@ var addProjectMixin = {
                 console.log('caught', e)
               })
             },
-            schemas.project
+            schemas.project()
           )
         }
       })

@@ -1,8 +1,8 @@
 import Django from '@/django/'
-
+import { DEFAULT_DJANGO_VERSION } from '@/django/'
 const django = new Django()
 
-const project = [
+const project = () => [
   {
     fieldType: "TextInput",
     placeholder: "This will be the importable python name for your project.",
@@ -18,13 +18,24 @@ const project = [
     name: "description"
   },
   {
+    fieldType: "ButtonGroupSelect",
+    name: "django_version",
+    label: "Version",
+    default_value: DEFAULT_DJANGO_VERSION,
+    options: [
+      {text: "Django 3", value: 3},
+      {text: "Django 2", value: 2},
+    ],
+    required: true,
+  },
+  {
     fieldType: "BooleanInput",
     label: "Include Django Channels in this project.",
     name: "channels",
   }
 ]
 
-const app = [
+const app = () => [
   {
     fieldType: "TextInput",
     placeholder: "This will be the importable python name for your app.",
@@ -35,7 +46,7 @@ const app = [
   }
 ]
 
-const model = [
+const model = () => [
   {
     fieldType: "TextInput",
     placeholder: "amodel",
@@ -58,7 +69,7 @@ const model = [
   }
 ]
 
-const field = [
+const field = () => [
   {
     fieldType: "TextInput",
     placeholder: "afield",
@@ -91,7 +102,7 @@ const field = [
   }
 ]
 
-const relationship = [
+const relationship = () => [
   {
     fieldType: "TextInput",
     placeholder: "arelationship",

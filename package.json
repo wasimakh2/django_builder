@@ -13,7 +13,7 @@
     "ci": "start-server-and-test test:e2e_serve http://localhost:8082 test:e2e"
   },
   "dependencies": {
-    "firebase": "^6.4.2",
+    "firebase": "^7.22.0",
     "firebase-tools": "^7.3.0",
     "highlight.js": "^9.15.6",
     "raw-loader": "^1.0.0",

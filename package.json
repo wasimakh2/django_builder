@@ -13,9 +13,9 @@
     "ci": "start-server-and-test test:e2e_serve http://localhost:8082 test:e2e"
   },
   "dependencies": {
-    "firebase": "^6.4.2",
-    "firebase-tools": "^7.3.0",
-    "highlight.js": "^9.15.6",
+    "firebase": "^7.14.0",
+    "firebase-tools": "^7.13.1",
+    "highlight.js": "^10.4.1",
     "raw-loader": "^1.0.0",
     "tar-js": "^0.3.0",
     "vue": "^2.5.21",

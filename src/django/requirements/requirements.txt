@@ -1,3 +1,4 @@
 XXX_DJANGO_VERSION_XXX
 django-extensions
 djangorestframework
+django>=5.0.14 # not directly required, pinned by Snyk to avoid a vulnerability
